@@ -1,0 +1,32 @@
+
+Name: Kiran Kumar kolla
+Address: 9 Wirrah Street, Melonba, NSW 2765
+Profession: Software Engineer / AI Developer
+Primary Language: Telugu, English
+
+Technical Interests:
+- Generative AI
+- Large Language Models (LLMs)
+- Vector Databases
+- Natural Language Processing
+- Building full-stack AI apps
+
+Hobbies:
+- Tinkering with open-source projects
+- Reading about the latest AI research
+- Automating boring stuff with Python
+- Playing with new AI models locally
+- Play Badminton
+
+Family:
+ - Wife: Rajeswari Devi
+ - Kids: Nikhil & Maahil
+ - Car: Mazda CX-30 with Rego Number: ERK60G
+
+
+
+Notes:
+- Uses Ollama for local inference
+- Has used LLaMA 3 and nomic-embed-text models
+- Comfortable working with Python, Flask, and LangChain
+- Interested in building a personal assistant that can ingest various document formats

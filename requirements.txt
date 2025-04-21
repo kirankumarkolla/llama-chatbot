@@ -1,0 +1,8 @@
+flask
+requests
+langchain
+chromadb
+unstructured
+pypdf
+tiktoken
+python-docx

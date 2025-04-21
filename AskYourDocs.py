@@ -12,7 +12,7 @@ from langchain.llms import OpenAI
 from langchain.schema import Document
 
 # Set OpenAI API Key
-os.environ["OPENAI_API_KEY"] = ""
+
 
 
 # Define ChromaDB storage location

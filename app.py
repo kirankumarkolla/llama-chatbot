@@ -10,22 +10,7 @@ MODEL_NAME = "llama3.2"
 CHROMA_DIR = "chroma_db/"
 HISTORY_FILE = "chat_history.json"
 
-
-def detect_intent(user_input):
-    """Basic rule-based intent detection (replace with LLM later if you want)"""
-    personal_keywords = ["my", "me", "i", "passport", "aadhar", "birthday", "email"]
-    doc_keywords = ["show", "find", "document", "resume", "csv", "certificate"]
-
-    personal = any(word in user_input.lower() for word in personal_keywords)
-    doc_related = any(word in user_input.lower() for word in doc_keywords)
-
-    if personal and not doc_related:
-        return "memory"
-    elif doc_related:
-        return "documents"
-    return "general"
-
-# === Chat Memory ===
+# === Chat History ===
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
@@ -43,6 +28,33 @@ embeddings = OllamaEmbeddings(model="nomic-embed-text")
 docs_store = Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
 memory_store = Chroma(persist_directory=CHROMA_DIR, collection_name="memory", embedding_function=embeddings)
 
+# === Intent Detection via LLM ===
+def classify_intent_llm(user_input):
+    classification_prompt = f"""
+Classify the following user query into one of these intents:
+- memory: asking about personal info (name, birthday, address, favorites, etc.)
+- documents: asking about content from resume, csvs, IDs, etc.
+- general: general knowledge, chitchat, or open-ended questions
+
+User message: "{user_input}"
+
+Reply with just one word: memory, documents, or general.
+"""
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": classification_prompt,
+        "stream": False
+    }
+    try:
+        response = requests.post(OLLAMA_URL, json=payload)
+        result = response.json()
+        reply = result.get("response", "").strip().lower()
+        if reply not in ["memory", "documents", "general"]:
+            return "general"
+        return reply
+    except:
+        return "general"
+
 # === Personal Fact Extractor ===
 def extract_fact_from_message(message):
     patterns = [
@@ -56,31 +68,27 @@ def extract_fact_from_message(message):
             return match.group(0).strip()
     return None
 
-# === Document Context Search ===
+# === Vector Context Functions ===
 def get_context_from_docs(query):
     results = docs_store.similarity_search(query, k=4)
-    context_parts = [
+    return "\n\n".join([
         f"[{doc.metadata.get('source', 'unknown')}] {doc.page_content.strip()}"
         for doc in results
-    ]
-    return "\n\n".join(context_parts)
+    ])
 
-# === Dynamic Context Builder ===
+def get_context_from_memory(query):
+    results = memory_store.similarity_search(query, k=4)
+    return "\n".join([
+        doc.page_content.strip() for doc in results
+    ])
+
+# === Prompt Builder ===
 def build_dynamic_prompt(user_input, recent_chat):
-    intent = detect_intent(user_input)
+    intent = classify_intent_llm(user_input)
+    print(f"\n🧠 Detected intent: {intent}")
 
-    memory_context = ""
-    doc_context = ""
-
-    if intent in ["memory", "general"]:
-        db = Chroma(persist_directory=CHROMA_DIR, embedding_function=OllamaEmbeddings(model="nomic-embed-text"))
-        memory_results = db.similarity_search(user_input, k=4)
-        memory_context = "\n\n".join([
-            f"[memory] {doc.page_content.strip()}" for doc in memory_results
-        ])
-
-    if intent in ["documents", "general"]:
-        doc_context = get_context_from_docs(user_input)
+    memory_context = get_context_from_memory(user_input) if intent in ["memory", "general"] else ""
+    doc_context = get_context_from_docs(user_input) if intent in ["documents", "general"] else ""
 
     chat_context = "\n".join([
         f"{m['role'].capitalize()}: {m['content']}" for m in recent_chat
@@ -88,27 +96,21 @@ def build_dynamic_prompt(user_input, recent_chat):
 
     prompt = f"""You are a private, secure personal assistant. You help answer questions using the user's own documents and remembered personal information.
 
-                The user has granted permission to reference personal documents (e.g., Aadhaar, Passport) and personal facts for their use only.
+The user has granted permission to reference personal documents (e.g., Aadhaar, Passport) and personal facts for their use only.
 
-            Conversation so far:
-            {chat_context}
+Conversation so far:
+{chat_context}
 
-            Relevant personal memory:
-            {memory_context}
+Relevant personal memory:
+{memory_context}
 
-            Relevant documents:
-            {doc_context}
+Relevant documents:
+{doc_context}
 
-            Answer the latest user message:
-            Assistant:"""
+Answer the latest user message:
+Assistant:"""
 
     return prompt
-
-
-# === Memory Context Search ===
-def get_context_from_memory(query):
-    results = memory_store.similarity_search(query, k=4)
-    return "\n".join([doc.page_content.strip() for doc in results])
 
 # === Routes ===
 @app.route("/")
@@ -121,7 +123,6 @@ def submit_message():
     messages.append({"role": "user", "content": user_input})
     save_history(messages)
 
-    # 💡 Detect and store personal info securely
     fact = extract_fact_from_message(user_input)
     if fact:
         memory_store.add_texts([fact])
@@ -135,30 +136,7 @@ def stream_response():
         user_input = messages[-1]["content"]
         recent_chat = messages[-4:] if len(messages) >= 4 else messages
 
-        # Build context dynamically based on intent
         prompt = build_dynamic_prompt(user_input, recent_chat)
-#         chat_context = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in recent_chat])
-
-#         doc_context = get_context_from_docs(user_input)
-#         memory_context = get_context_from_memory(user_input)
-
-#         prompt = f"""You are a private, secure personal assistant. You help answer questions using the user's own documents and remembered personal information.
-
-# The user has granted permission to reference personal documents (e.g., Aadhaar, Passport) and personal facts for their use only.
-
-# Recent conversation:
-# {chat_context}
-
-# Known personal facts:
-# {memory_context}
-
-# Relevant document info:
-# {doc_context}
-
-# Latest user message:
-# {user_input}
-
-# Assistant:"""
 
         payload = {
             "model": MODEL_NAME,

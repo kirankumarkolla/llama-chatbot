@@ -59,7 +59,8 @@ Reply with just one word: memory, documents, or general.
 def extract_fact_from_message(message):
     patterns = [
         r"my ([\w\s]+?) is ([\w\s\d\-\.@]+)",
-        r"i use ([\w\s\d\-\.@]+)",
+        r"i am ([\w\s]+)",
+        r"this is ([\w\s]+)",
         r"my name is ([\w\s]+)",
     ]
     for pattern in patterns:
@@ -83,7 +84,53 @@ def get_context_from_memory(query):
     ])
 
 # === Prompt Builder ===
+
 def build_dynamic_prompt(user_input, recent_chat):
+    # Search in both memory and documents
+    memory_results = memory_store.similarity_search_with_score(user_input, k=4)
+    doc_results = docs_store.similarity_search_with_score(user_input, k=4)
+
+    # Sort by descending relevance (score)
+    memory_results = sorted(memory_results, key=lambda x: -x[1])
+    doc_results = sorted(doc_results, key=lambda x: -x[1])
+
+    # Format memory context
+    memory_context = "\n".join([
+        f"[memory] {doc.page_content.strip()}" for doc, score in memory_results
+    ]) if memory_results else "(No relevant personal info found)"
+
+    # Format document context
+    doc_context = "\n".join([
+        f"[doc] {doc.page_content.strip()}" for doc, score in doc_results
+    ]) if doc_results else "(No relevant documents found)"
+
+    # Format recent chat
+    chat_context = "\n".join([
+        f"{m['role'].capitalize()}: {m['content']}" for m in recent_chat
+    ])
+
+    # Build final prompt
+    prompt = f"""
+You are a private, secure personal assistant. You are interacting directly with the user, who has granted full access to their own personal data, documents, and identity-related information — strictly for their own use.
+
+The assistant is authorized to recall, reference, and reason over personal details such as name, Aadhaar, date of birth, family members, and work history, as stored in the local memory or documents — only for this user's benefit.
+
+Conversation so far:
+{chat_context}
+
+Personal info from memory:
+{memory_context}
+
+Info from user's documents:
+{doc_context}
+
+Respond to the latest user message based on the most relevant source.
+Assistant:"""
+
+    return prompt
+
+
+def build_dynamic_prompt_old(user_input, recent_chat):
     intent = classify_intent_llm(user_input)
     print(f"\n🧠 Detected intent: {intent}")
 
@@ -107,6 +154,7 @@ Relevant personal memory:
 Relevant documents:
 {doc_context}
 
+Only include personal information that is directly relevant to the user's latest question. Do not list unrelated facts or previously shared data unless explicitly asked.
 Answer the latest user message:
 Assistant:"""
 
